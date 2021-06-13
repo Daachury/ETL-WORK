@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+get_ipython().system('pip install pyarrow')
+get_ipython().system('pip install google-cloud-bigquery')
+
+
+# In[2]:
+
+
+import psycopg2
+import pandas as pd
+
+from google.cloud import bigquery
+from google.oauth2 import service_account
+
+
+# In[40]:
+
+
+conn = psycopg2.connect( host = 'localhost', port = 5432, database = 'Adventureworks', user = 'postgres', password='postgres')
+
+
+# In[41]:
+
+
+cur = conn.cursor()
+table = pd.read_sql_query( 'SELECT 	salesorderdetail.salesorderid, salesorderdetail.modifieddate, revisionnumber , salesorderdetail.specialofferid from sales.salesorderdetail, sales.salesorderheader, sales.specialofferproduct limit 100;', conn )
+cur.close()
+
+
+# In[42]:
+
+
+conn.close()
+
+
+# In[43]:
+
+
+table.shape
+
+
+# In[44]:
+
+
+table.dtypes
+
+
+# In[45]:
+
+
+table.head()
+
+
+# In[47]:
+
+
+grouping = table.groupby( table[ 'modifieddate' ].dt.date ).agg( { 'salesorderid': 'count' } ).reset_index().rename( columns = { 'salesorderid': 'count' } )
+
+
+# In[48]:
+
+
+grouping
+
+
+# In[49]:
+
+
+credentials = service_account.Credentials.from_service_account_file( 
+    '/Users/dachuryp/Downloads/prefab-sky-316717-348de5cd6bd3.json', 
+    scopes = [ 'https://www.googleapis.com/auth/cloud-platform' ]
+)
+
+
+# In[50]:
+
+
+client = bigquery.Client( credentials = credentials, project = credentials.project_id )
+
+
+# In[51]:
+
+
+job_config = bigquery.LoadJobConfig(
+    schema = [
+        # Supported datatypes: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types
+        bigquery.SchemaField( 'modifieddate', bigquery.enums.SqlTypeNames.DATE ),
+        bigquery.SchemaField( 'count', bigquery.enums.SqlTypeNames.INT64 ),
+    ],
+    # Drod and re-create table, if exist
+    write_disposition = 'WRITE_TRUNCATE',
+)
+
+
+# In[52]:
+
+
+job = client.load_table_from_dataframe(
+    grouping, 'databases2.grouping', job_config = job_config
+)
+job.result()
+
+
+# In[53]:
+
+
+table = client.get_table( 'databases2.grouping' )
+print(
+    'Loaded {} rows and {} columns to {}'.format(
+        table.num_rows, len( table.schema ), 'databases2.grouping'
+    )
+)
+
+
+# In[ ]:
+
+
+
+
